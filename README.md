@@ -209,7 +209,7 @@ VOLUME ["/go-docker/logs"]
 CMD ["go-docker"]
 ```
 
-- 重现build image, 并且通过挂载 volume方式启动container
+- 重新 build image, 并且通过挂载 volume方式启动container
 ```shell
   $docker build -t go-docker-volume -f Dockerfile.volume .  #指定Dockerfile.volume文件构建image go-docker-volume
 
@@ -220,5 +220,55 @@ CMD ["go-docker"]
   $mkdir /tmp/app-logs  #创建host log dir
   $docker run -d -p 8080:8080 -v /tmp/app-logs/:/go-docker/logs go-docker-volume  #挂载volume，启动container实例
   $tailf /tmp/app-logs/app.log #服务可以访问，日志挂载成功
+
+```
+
+- 通过 Multi-stage builds减少应用image的大小，创建 Dockerfile.multistage文件，并填充下面的信息
+``` dockerfile
+# Dockerfile References: https://docs.docker.com/engine/reference/builder/
+
+# Start from golang v1.11 base image
+FROM golang:1.11 as builder
+
+# Add Maintainer Info
+LABEL maintainer="easierway <easierway@gmail.com>"
+
+# Set the Current Working Directory inside the container
+WORKDIR ~/go-docker
+
+# Copy everything from the current directory to the PWD(Present Working Directory) inside the container
+COPY . .
+
+# Download dependencies
+RUN go get -d -v ./...
+
+# Build the Go app
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /go/bin/go-docker .
+
+
+######## Start a new stage from scratch #######
+FROM alpine:latest  
+
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /root/
+
+# Copy the Pre-built binary file from the previous stage
+COPY --from=builder /go/bin/go-docker .
+
+EXPOSE 8080
+
+CMD ["./go-docker"] 
+```
+
+- 通过 Multi-stage重新 build image, 并且通过优化后的image启动container
+```shell
+  $docker build -t go-docker-optimized -f Dockerfile.multistage .  #指定Dockerfile.multifile文件multi stage build image go-docker-optimized
+
+  $docker image ls  #查看构建成功的镜像
+  REPOSITORY            TAG                 IMAGE ID            CREATED             SIZE
+  go-docker-optimized   latest              1fe23e2d1059        8 seconds ago       12MB
+
+  $docker run -d -p 8080:8080  go-docker-optimized  #使用go-docker-optimized image 启动container实例
 
 ```
