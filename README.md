@@ -164,3 +164,61 @@ CMD ["go-docker"]
 
   $docker stop go-docker #关闭一个container实例
 ```
+
+- 通过volume 共享Host OS的目录用于container 应用日志的写入,增加Dockerfile.volume文件，并写入下面的内容
+```dockerfile
+# Dockerfile References: https://docs.docker.com/engine/reference/builder/
+
+# Start from golang v1.11 base image
+FROM golang:1.11
+
+# Add Maintainer Info
+LABEL maintainer="easierway <easierway@gmail.com>"
+
+# Build Args
+ARG APP_NAME=go-docker
+ARG LOG_DIR=/${APP_NAME}/logs
+
+# Create Log Directory
+RUN mkdir -p ${LOG_DIR}
+
+# Environment Variables
+ENV LOG_FILE_LOCATION=${LOG_DIR}/app.log 
+
+
+# Set the Current Working Directory inside the container
+WORKDIR ~/go-docker
+
+# Copy everything from the current directory to the PWD(Present Working Directory) inside the container
+COPY . .
+
+# Download all the dependencies
+# https://stackoverflow.com/questions/28031603/what-do-three-dots-mean-in-go-command-line-invocations
+RUN go get -d -v ./...
+
+# Install the package
+RUN go install -v ./...
+
+# This container exposes port 8080 to the outside world
+EXPOSE 8080
+
+# Declare volumes to mount
+VOLUME ["/go-docker/logs"]
+
+# Run the executable
+CMD ["go-docker"]
+```
+
+- 重现build image, 并且通过挂载 volume方式启动container
+```shell
+  $docker build -t go-docker-volume -f Dockerfile.volume .  #指定Dockerfile.volume文件构建image go-docker-volume
+
+  $docker image ls  #查看构建成功的镜像
+  REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+  go-docker-volume    latest              6c073081c4fe        6 seconds ago       792MB
+
+  $mkdir /tmp/app-logs  #创建host log dir
+  $docker run -d -p 8080:8080 -v /tmp/app-logs/:/go-docker/logs go-docker-volume  #挂载volume，启动container实例
+  $tailf /tmp/app-logs/app.log #服务可以访问，日志挂载成功
+
+```
